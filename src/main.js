@@ -1,5 +1,6 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import started from 'electron-squirrel-startup';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
@@ -17,35 +18,32 @@ const createWindow = async () => {
     },
   });
 
-  // console.log('MAIN_WINDOW_VITE_DEV_SERVER_URL:', MAIN_WINDOW_VITE_DEV_SERVER_URL);
-  // // and load the index.html of the app.
-  // if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-  //   mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
-  // } else {
-  //   mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
-  // }
   mainWindow.loadURL("https://openprocessing.org");
-
-  const res = await fetch(`${MAIN_WINDOW_VITE_DEV_SERVER_URL}/src/plugin.js`, {
-    cache: 'no-store',
-  });
-  const text = await res.text();
-  const base64Text = Buffer.from(text).toString('base64');
-
-  function attachPlugin() {
-    console.log('Attaching plugin.js to mainWindow');
-    mainWindow.webContents.executeJavaScript(`
-    const script = document.createElement('script');
-    script.type = 'module';
-    script.src = 'data:text/javascript;base64,${base64Text}';
-    document.head.appendChild(script);
-  `);
-  }
   mainWindow.addListener('did-finish-load', attachPlugin);
 
   // Open the DevTools.
   mainWindow.webContents.openDevTools();
 };
+
+ipcMain.handle('sketch', (event, code) => {
+  console.log('Received sketch code:', code);
+  const tempDir = process.env.TEMP || process.env.TMPDIR || '/tmp';
+  const tempFolder = `${tempDir}/processing-sketches`;
+  const sketchFolder = `${tempFolder}/sketch-${Date.now()}/tempSketch/`;
+  mkdirSync(sketchFolder, { recursive: true });
+  const filePath = `${sketchFolder}/tempSketch.pde`;
+  writeFileSync(filePath, code.codeObjects[0].code, { recursive: true });
+  console.log(`Sketch written to ${filePath}`);
+  const { exec } = require('child_process');
+  exec(`processing-java --sketch=${sketchFolder} --run`, (error, stdout, stderr) => {
+    console.log(`stdout: ${stdout}`);
+    console.error(`stderr: ${stderr}`);
+    if (error) {
+      console.error(`Error executing sketch: ${error.message}`);
+    }
+  });
+})
+
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
